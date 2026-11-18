@@ -7,7 +7,7 @@ const OVERLAY = el('selection-canvas');
 const context = OVERLAY.getContext('2d');
 let config, projects = [], project = null, state = null, report = null, tab = 'map', tool = 'probe';
 let target = {}, regionId = '', drag = null, viewport = null, analyzedSequence = 0, captureSequence = 0;
-let viewURL, evidenceURL, toastTimer, previewTimer, mapMode = 'inspection';
+let viewURL, evidenceURL, toastTimer, previewTimer, mapMode = 'inspection', balanceSuggestion = null;
 
 function toast(text, error=false) {
   el('toast').textContent = text;
@@ -118,6 +118,7 @@ async function useCapture(next, readId = null) {
   report = null;
   target = {};
   regionId = '';
+  balanceSuggestion = null;
   mapMode = 'inspection';
   el('view-caption').textContent = 'LIVE INSPECTION';
   el('output-card').hidden = true;
@@ -499,6 +500,15 @@ const action = {
   },
   'sweep': async()=>displaySweep('curve'),
   'sweep-sheet': async()=>displaySweep('png'),
+  'suggest-balance': async()=>{balanceSuggestion=null; await displayBalance();},
+  'balance-csv': async()=>downloadBlob(await processing('/analyzer-balance',{...balanceSettings(),output:'csv'},true),'analyzer-balance-angles.csv'),
+  'apply-balance': async()=>{
+    if (balanceSuggestion==null) throw new Error('Suggest an analyzer angle first.');
+    changeLayer('analyzer');
+    state.view.analyzer_angle=balanceSuggestion;
+    await updateMap(false); renderPanel();
+    toast(`Virtual analyzer moved to ${fmt(balanceSuggestion,1)}°.`);
+  },
   'apply-quality': async()=>{
     const prior=state.processing.limits;
     state.processing.limits={...prior,min_intensity:number('limit-dark'),max_pair_error:number('limit-closure'),saturation:number('limit-clipped'),min_direction:number('limit-direction'),max_degree:number('limit-physical'),mask_threshold:number('limit-mask')};
@@ -583,6 +593,30 @@ async function displaySweep(output) {
   const params={...regionSelection(),start:number('sweep-start'),stop:number('sweep-stop'),count:number('sweep-count'),signal_level:number('sweep-level')};
   const [r,img]=await Promise.all([processing('/sweep',params),processing('/sweep',{...params,output},true)]);
   showEvidence(output==='curve'?'Virtual analyzer response':'Virtual analyzer contact sheet',metrics([['Angle samples',r.angles.length],['Usable pixels',fmt(r.usable,0)],['Signal threshold',fmt(r.minimum_signal)]]),img);
+}
+function balanceSettings() {
+  const options={protect_region_id:value('balance-protect'),glare_region_id:value('balance-glare'),baseline_angle:number('balance-baseline'),retention_level:number('balance-retention'),retained_fraction:number('balance-fraction'),angle_step:number('balance-step')};
+  if (!options.protect_region_id || !options.glare_region_id) throw new Error('Choose a saved region to keep bright and one to suppress.');
+  return options;
+}
+function percent(value) { return value==null ? '—' : `${(value*100).toFixed(1)}%`; }
+async function displayBalance() {
+  const options=balanceSettings();
+  const [r,img]=await Promise.all([processing('/analyzer-balance',options),processing('/analyzer-balance',{...options,output:'png'},true)]);
+  balanceSuggestion=r.suggested_angle;
+  const protect=r.protect, glare=r.glare;
+  const figures=metrics([
+    ['Suggested angle',`${fmt(r.suggested_angle,1)}°`],
+    ['Current preview',`${fmt(r.baseline_angle,1)}°`],
+    ['Protected kept',percent(protect.retained_fraction)],
+    ['Glare p90',glare.change.p90_reduction==null?'—':`${glare.change.p90_reduction>0?'−':'+'}${Math.abs(glare.change.p90_reduction*100).toFixed(1)}%`],
+  ]);
+  const table=detailTable(['Area','Usable px','Mean now → suggested','Median now → suggested','Excluded'],
+    [[protect.region,fmt(protect.usable,0),`${fmt(protect.baseline.mean,4)} → ${fmt(protect.suggested.mean,4)}`, `${fmt(protect.baseline.median,4)} → ${fmt(protect.suggested.median,4)}`,fmt(protect.excluded_total,0)],
+     [glare.region,fmt(glare.usable,0),`${fmt(glare.baseline.mean,4)} → ${fmt(glare.suggested.mean,4)}`, `${fmt(glare.baseline.p90,4)} → ${fmt(glare.suggested.p90,4)} (p90)`,fmt(glare.excluded_total,0)]]);
+  const note=`<div class="output-info">${enc(r.basis)} Protected pixels must stay at or above ${percent(r.requirements.retention_level)} of their current brightness on ${percent(r.requirements.retained_fraction)} of measurable pixels. ${r.feasible_angles} of ${r.candidates} angles meet that; glare is ranked by region ${enc(r.glare_statistic)}.</div>`;
+  const apply=button('Use suggested angle','apply-balance','','primary');
+  showEvidence('Analyzer balance',note+figures+table+`<div class="flex-buttons">${apply}</div>`,img);
 }
 
 function prepareInput() {
@@ -686,6 +720,7 @@ function prepareInput() {
     if (event.target.id!=='analyzer-angle') return;
     state.view.analyzer_angle=number('analyzer-angle');
     el('analyzer-readout').textContent=`${fmt(state.view.analyzer_angle,1)}°`;
+    if (el('balance-baseline')) el('balance-baseline').value=state.view.analyzer_angle;
     clearTimeout(previewTimer);
     previewTimer=setTimeout(()=>updateMap(false).catch(e=>toast(e.message,true)),125);
   });

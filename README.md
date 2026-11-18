@@ -18,6 +18,7 @@ For Python execution, create a virtual environment using Python 3.11 or 3.12, in
 2. In **Measure**, choose **Native coverage gap** and click **Measure region**. To read across the same area, draw with **Line** and click **Plot scan line**. Interpolation stops across gaps instead of marking excluded positions as zero.
 3. In **Quality**, open the quality map, then locate **Native coverage gap** patches. Draw a box and preview an exclusion before applying it to the detector inclusion mask.
 4. Use **Save view** to preserve a processing and source snapshot. **Export** offers a rendered PNG, linear numeric TIFF, inspection worksheet, contact sheet or evidence ZIP.
+5. In **Measure**, save a region over lettering behind glass and one over the reflection. Under **Analyzer balance**, check **Suggest angle**: each candidate is a single analyzer angle for the whole image, at least 90% of measurable pixels in the bright region must keep 85% of their current brightness, and the glare region is scored by its 90th percentile so isolated specks cannot drive the result. Confirm the reported change before **Use suggested angle** moves the virtual analyzer.
 
 ## Supported workflows
 
@@ -32,6 +33,7 @@ For Python execution, create a virtual environment using Python 3.11 or 3.12, in
 | Coverage diagnosis | Use categorical reasons, connected issue patches and opposite-pair evidence. Probe a detector pixel for its native source coordinates and available measurements. |
 | Detector mask | Import positive grayscale inclusion, review interior and edge exclusions, or preview and apply a box edit. |
 | Regional measurement | Measure saved or live regions, inspect a value histogram and axial summary and export regional statistics. |
+| Analyzer angle balance | Pick one saved region to keep bright and one to suppress glare. **Measure → Analyzer balance** scores every analyzer angle for the whole detector image, reports the protected area's retained brightness, the glare area's reduction and a per-angle table, and only changes the virtual analyzer after you confirm. |
 | Scan-line sampling | Draw or save a detector line and sample with nearest or bilinear interpolation while preserving invalid intervals. |
 | Spatial detector summaries | Read orientation by grid cell, row bands or signal extrema. Calibrate detector pitch to report region dimensions or line lengths in physical units. |
 | Raw crop | Preview a box and save it as a new capture with unchanged original sample codes, complete mosaic tiles and contained regions. |

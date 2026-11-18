@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from flask import Blueprint
 
-from . import artifacts, comparison, detector_bands, field_grid, masking, profiles, quality, reference_review, registration_review, statistics, sweep
+from . import analyzer_balance, artifacts, comparison, detector_bands, field_grid, masking, profiles, quality, reference_review, registration_review, statistics, sweep
 from .domain import Box, InputError, enum_value
 from .http_support import loaded_case, return_project, send_csv, send_download, send_image
 from .render import histogram_chart, legend, profile_chart, raster
@@ -227,6 +227,19 @@ def review_registration(project_id):
     if case.options.get('output') == 'png':
         return send_image(registration_review.evaluation_image(review))
     return registration_review.summarize_evaluation(results, review)
+
+
+@api.post('/analyzer-balance')
+def analyzer_balance_angle(project_id):
+    case = loaded_case(project_id, 'Analyzer balance')
+    results, view = case.results()
+    report = analyzer_balance.suggest_balance(results, case.record, case.options, view)
+    output = enum_value(case.options.get('output', 'json'), ('json', 'png', 'csv'), 'Balance output')
+    if output == 'png':
+        return send_image(analyzer_balance.balance_chart(report))
+    if output == 'csv':
+        return send_csv(analyzer_balance.balance_csv(report), 'analyzer-balance-angles.csv')
+    return report
 
 
 @api.post('/sweep')
