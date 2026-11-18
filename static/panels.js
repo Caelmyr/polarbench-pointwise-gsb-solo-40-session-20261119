@@ -78,6 +78,18 @@ function sourcePanel({project:p, state, config}) {
     + section('Capture details',actions(button('Rename','rename-capture'),button('Delete capture','delete-capture','','danger small')));
 }
 
+function layupPanel({selection}) {
+  const ref = selection?.layupRef;
+  const refLabel = ref ? `${ref.x}, ${ref.y} · ${ref.width} × ${ref.height}` : 'No reference box drawn';
+  return section('Layup direction patches',
+    `<p>Use the Box tool on the direction map to frame a normally laid section, then set it as the reference. Deviating measured pixels are grouped into inspectable patches in their original detector position.</p>`
+    + `<div class="help-line"><span>Reference box</span><code>${enc(refLabel)}</code></div>`
+    + actions(button('Use drawn box as reference','layup-reference'), button('Clear reference','layup-clear-ref'))
+    + row(num('layup-deviation','Deviation threshold °',20,1,2,90),num('layup-split','Patch split tolerance °',25,1,2,90))
+    + row(num('layup-bridge','Weak bridge length px',2,1,0,2),num('layup-min-area','Min measured pixels',12,1,1,1000000))
+    + actions(button('Locate direction patches','layup-patches'),button('Direction map','layup-direction-map')));
+}
+
 function measurePanel({project:p, config, state, selection, regionId}) {
   const selected = selection?.box;
   const selectedLine = selection?.line;
@@ -88,7 +100,8 @@ function measurePanel({project:p, config, state, selection, regionId}) {
     + section('Region',`<div class="help-line"><span>Current box</span><code>${enc(label)}</code></div>${select('measure-region','Scope',regionOptions(p,'Live box or entire detector'),regionId)}${select('measure-layer','Signal',layerOptions(config,config.scalar_layers),state.view.layer==='quality'?'intensity':state.view.layer)}${actions(button('Measure region','measure-region'),button('Save region','save-region'),button('Table CSV','region-table'))}${regionItems}`)
     + section('Scan line',`<div class="help-line"><span>Current line</span><code>${enc(scan)}</code></div>${select('profile-id','Scan line',[['','Live line'],...p.profiles.map(x=>[x.id,x.name])],'')}${select('profile-interp','Sample method',[['bilinear','Bilinear'],['nearest','Nearest']], 'bilinear')}${actions(button('Plot scan line','profile'),button('Save line','save-profile'))}`)
     + section('Spatial summaries', `${row(num('grid-tile','Cell size',40,1,4,600),num('band-step','Band thickness',8,1,1,160))}${actions(button('Orientation grid','orientation-grid'),button('Detector bands','bands'),button('Signal markers','markers'),button('Measure extent','extent'))}`)
-    + section('Analyzer sweep',`${row(num('sweep-start','Start °',0,1,0,180),num('sweep-stop','Stop °',165,1,0,180))}${row(num('sweep-count','Angles',12,1,2,36),num('sweep-level','Signal threshold',.2,.01,0,8))}${actions(button('Response curve','sweep'),button('Angle contact sheet','sweep-sheet'))}`);
+    + section('Analyzer sweep',`${row(num('sweep-start','Start °',0,1,0,180),num('sweep-stop','Stop °',165,1,0,180))}${row(num('sweep-count','Angles',12,1,2,36),num('sweep-level','Signal threshold',.2,.01,0,8))}${actions(button('Response curve','sweep'),button('Angle contact sheet','sweep-sheet'))}`)
+    + layupPanel({selection});
 }
 
 function qualityPanel({config,state,report,project}) {

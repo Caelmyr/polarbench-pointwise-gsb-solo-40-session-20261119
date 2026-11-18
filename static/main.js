@@ -243,6 +243,7 @@ function redrawSelection() {
     }
   }
   if (target.box) rectangle(target.box,'#b6eedf','rgba(157,225,207,.13)');
+  if (target.layupRef) rectangle(target.layupRef,'#69dbaf','rgba(105,219,175,.16)');
   if (target.line) drawLine(target.line,'#f1ce92');
   if (target.point) {
     const p=target.point;
@@ -481,6 +482,39 @@ const action = {
     const opts={box:activeBox(),tile:number('grid-tile')};
     const [r,img]=await Promise.all([processing('/orientation-grid',opts),processing('/orientation-grid',{...opts,output:'png'},true)]);
     showEvidence('Orientation grid',metrics([['Columns',fmt(r.columns,0)],['Rows',fmt(r.rows,0)],['Directional',fmt(r.usable_cells,0)]]),img);
+  },
+  'layup-direction-map': async()=>{
+    changeLayer('direction'); await updateMap(true);
+    toast('Draw a box over a normally laid section, then set it as the reference.');
+  },
+  'layup-reference': async()=>{
+    if (!target.box) throw new Error('Use the Box tool to frame a normally laid section first.');
+    target.layupRef = copy(target.box);
+    renderPanel();
+    toast('Reference layup box set.');
+  },
+  'layup-clear-ref': async()=>{
+    target.layupRef = null; renderPanel();
+  },
+  'layup-patches': async()=>{
+    if (!target.layupRef) throw new Error('Set a reference box from a normally laid section first.');
+    const opts = {
+      reference_box: copy(target.layupRef),
+      box: activeBox(),
+      deviation: number('layup-deviation'),
+      split: number('layup-split'),
+      bridge_gap: number('layup-bridge'),
+      min_area: number('layup-min-area'),
+    };
+    const [r,img]=await Promise.all([processing('/layup/patches',opts),processing('/layup/patches',{...opts,output:'png'},true)]);
+    const table = detailTable(['Patch','Detector x,y','Measured px','Bridge weak','Median °','Mean dev °'],
+      r.patches.slice(0,12).map(p=>[p.patch,`${p.box.x}, ${p.box.y}`,fmt(p.measured_pixels,0),fmt(p.bridge_weak_pixels,0),fmt(p.median_direction,1),fmt(p.mean_deviation,1)]));
+    const figures = metrics([
+      ['Reference axis',`${fmt(r.reference_direction,2)}°`],
+      ['Anomaly pixels',fmt(r.anomaly_pixels,0)],['Components',fmt(r.all_components,0)],
+      ['Qualified',fmt(r.qualified_components,0)],['Bridge weak',fmt(r.weak_pixels,0)],
+    ]);
+    showEvidence(`Layup deviations ≥ ${fmt(r.deviation_threshold,1)}°`,figures+table,img);
   },
   'bands': async()=>{
     const opts={...regionSelection(),step:number('band-step'),layer:value('measure-layer')==='direction'?'intensity':value('measure-layer')};

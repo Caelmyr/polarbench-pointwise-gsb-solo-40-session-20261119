@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from flask import Blueprint
 
-from . import artifacts, comparison, detector_bands, field_grid, masking, profiles, quality, reference_review, registration_review, statistics, sweep
+from . import artifacts, comparison, detector_bands, field_grid, layup, layup_images, masking, profiles, quality, reference_review, registration_review, statistics, sweep
 from .domain import Box, InputError, enum_value
 from .http_support import loaded_case, return_project, send_csv, send_download, send_image
 from .render import histogram_chart, legend, profile_chart, raster
@@ -136,6 +136,20 @@ def image_patches(project_id):
         return send_csv(csv_text(('patch', 'first', 'after_last', 'pixels', 'touches_window'), issue_profile(patches, axis)),
                         'detector-quality-patches.csv')
     return patches
+
+
+@api.post('/layup/patches')
+def layup_patches(project_id):
+    case = loaded_case(project_id)
+    results, _ = case.results()
+    output = enum_value(case.options.get('output', 'json'), ('json', 'png', 'csv'), 'Layup patch output')
+    report = layup.review_layup(results, case.record, case.options)
+    if output == 'png':
+        return send_image(layup_images.layup_overlay(results, report))
+    if output == 'csv':
+        return send_csv(layup.layup_csv(report), 'detector-layup-patches.csv')
+    report.pop('_render', None)
+    return report
 
 
 @api.post('/mask/evidence')
