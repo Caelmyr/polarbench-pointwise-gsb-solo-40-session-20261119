@@ -47,6 +47,12 @@ def import_project():
     return return_project(app_bench().import_capture(request.form, request.files), 201)
 
 
+@api.post('/mosaic-calibration')
+def calibrate_mosaic_order():
+    from .mosaic_solve import solve_from_request
+    return solve_from_request(request.form, request.files)
+
+
 @api.patch('/projects/<project_id>')
 def edit_project(project_id):
     return return_project(app_bench().rename(project_id, request_object('Capture details')))

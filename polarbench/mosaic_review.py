@@ -7,7 +7,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from .codec import rgba_png
 from .domain import Box, InputError, enum_value, integer, object_value
-from .ingest import MOSAIC_PRESETS, source_download
+from .ingest import MOSAIC_LAYOUTS, source_download
 from .codec import read_image
 from .render import map_colors
 
@@ -41,7 +41,7 @@ def mosaic_study(store, record, raw):
         box = Box(box.x, box.y, min(box.width, cols), min(box.height, rows))
     payload, _ = source_download(store, record, 'mosaic')
     pattern = cap['mosaic_layout']
-    return MosaicStudy(pattern, MOSAIC_PRESETS[pattern], box, read_image(payload), mode)
+    return MosaicStudy(pattern, MOSAIC_LAYOUTS[pattern], box, read_image(payload), mode)
 
 
 def _lane_reading(study, position, angle):

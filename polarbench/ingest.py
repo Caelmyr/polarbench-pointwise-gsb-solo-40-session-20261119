@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import permutations
 
 from .codec import ImagePlane, input_packet, read_image, read_mask, read_upload, slice_plane
 from .domain import ANGLES, CHANNEL_FIELD, InputError, check_shape, enum_value
@@ -11,6 +12,13 @@ MOSAIC_PRESETS = {
     '90-135-45-0': (90, 135, 45, 0),
     '45-0-90-135': (45, 0, 90, 135),
     '0-135-45-90': (0, 135, 45, 90),
+}
+# Every assignment of the four analyzer angles to the 2 x 2 tile positions is a
+# valid physical layout; presets are named shortcuts and reference-inferred
+# layouts are stored as their canonical "a-b-c-d" key.
+MOSAIC_LAYOUTS = {
+    '-'.join(str(angle) for angle in order): tuple(order)
+    for order in permutations(ANGLES)
 }
 REFERENCE_FIELDS = ('dark', 'flat')
 
@@ -90,9 +98,13 @@ def mosaic_channels(plane: ImagePlane, order: tuple[int, int, int, int]):
     return {angle: slice_plane(plane, position // 2, position % 2) for position, angle in enumerate(order)}
 
 
+def mosaic_order(order_key):
+    enum_value(order_key, MOSAIC_LAYOUTS, 'Mosaic pattern')
+    return MOSAIC_LAYOUTS[order_key]
+
+
 def prepare_mosaic(source_file, order_key, mask_file=None):
-    enum_value(order_key, MOSAIC_PRESETS, 'Mosaic pattern')
-    order = MOSAIC_PRESETS[order_key]
+    order = mosaic_order(order_key)
     plane, info, payload = _named_image(source_file)
     channels = mosaic_channels(plane, order)
     height, width = channels[0].shape
@@ -158,7 +170,7 @@ def decode(store, record, mask_threshold=1):
         planes = {angle: _source_plane(store, project_id, items[CHANNEL_FIELD[angle]]) for angle in ANGLES}
     else:
         raw = _source_plane(store, project_id, items['mosaic'])
-        tile = MOSAIC_PRESETS[capture['mosaic_layout']]
+        tile = MOSAIC_LAYOUTS[capture['mosaic_layout']]
         positions = {angle: divmod(index, 2) for index, angle in enumerate(tile)}
         planes = mosaic_channels(raw, tile)
     canvas = _same_canvas(planes)

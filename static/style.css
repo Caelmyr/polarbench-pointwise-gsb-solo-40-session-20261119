@@ -200,6 +200,18 @@ label.field { display: grid; gap: 5px; min-width: 0; color: #abb9ca; font-size: 
 .import-fields { margin-top: 11px; }
 #import-planes { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
 #import-planes .field { margin: 0; }
+.calibration-box { margin-top: 11px; padding: 11px; border: 1px solid #3a4757; border-radius: 8px; background: #161d27; display: grid; gap: 9px; }
+.calibration-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.calibration-state { font: 10px var(--font-mono); color: var(--muted); background: #242e3a; border-radius: 5px; padding: 3px 7px; }
+.calibration-state.state-ok { color: #b6eedf; background: #24403a; }
+.calibration-state.state-warn { color: #f1ce92; background: #413526; }
+.badge { display: inline-flex; align-items: center; font-size: 11px; font-weight: 650; border-radius: 999px; padding: 4px 10px; }
+.badge-ok { color: #b6eedf; background: #24403a; border: 1px solid #3f6a5e; }
+.badge-warn { color: #f1ce92; background: #413526; border: 1px solid #6f5a36; }
+.calibration-warning { color: #f1ce92 !important; font-size: 11px !important; }
+#calibration-result details { margin-top: 8px; }
+#calibration-result summary { font-size: 12px; color: #dfe8ef; font-weight: 650; cursor: pointer; margin-bottom: 6px; }
+#calibration-result .detail-table { margin-top: 6px; }
 .panel-section details + details { margin-top: 10px; }
 .panel-section details + .control-row { margin-top: 12px; }
 .panel-section .metrics + p { margin-top: 9px; }

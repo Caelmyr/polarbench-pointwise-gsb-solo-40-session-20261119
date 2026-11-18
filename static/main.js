@@ -7,7 +7,7 @@ const OVERLAY = el('selection-canvas');
 const context = OVERLAY.getContext('2d');
 let config, projects = [], project = null, state = null, report = null, tab = 'map', tool = 'probe';
 let target = {}, regionId = '', drag = null, viewport = null, analyzedSequence = 0, captureSequence = 0;
-let viewURL, evidenceURL, toastTimer, previewTimer, mapMode = 'inspection';
+let viewURL, evidenceURL, toastTimer, previewTimer, mapMode = 'inspection', inferredCalibration = null;
 
 function toast(text, error=false) {
   el('toast').textContent = text;
@@ -294,10 +294,71 @@ function nameDialog(title,defaultValue,action,actionName='Save') {
   el('modal-name').select();
 }
 function importDialog() {
+  inferredCalibration = null;
   const canSee = `accept=".png,.tif,.tiff,image/png,image/tiff"`;
   const angles = config.angles.map(a=>`<label class="field">${a}° analyzer<input name="i${a}" type="file" ${canSee}></label>`).join('');
   const patterns = Object.keys(config.mosaic_patterns).map(key=>option(key,key.replaceAll('-', ' · '),'0-45-135-90')).join('');
-  openModal('Import capture', `<form id="import-form"><label class="field">Input type<select id="import-type" name="kind"><option value="planes">Four analyzer images</option><option value="mosaic">2 × 2 sensor mosaic</option><option value="package">PolarBench source package</option></select></label><label class="field">Capture name<input name="name" maxlength="100" placeholder="Sample or inspection name"></label><div class="import-fields" id="import-planes">${angles}</div><div class="import-fields" id="import-mosaic" hidden><label class="field">Raw mosaic<input name="mosaic" type="file" ${canSee}></label><label class="field">Tile pattern (upper left, upper right / lower left, lower right)<select name="mosaic_layout">${patterns}</select></label></div><div class="import-fields" id="import-mask"><label class="field">Optional detector inclusion mask<input name="mask" type="file" ${canSee}></label></div><div class="import-fields" id="import-package" hidden><label class="field">Source ZIP<input name="package" type="file" accept=".zip,application/zip"></label></div><div class="flex-buttons"><button class="button primary" type="submit">Import</button></div></form>`);
+  openModal('Import capture', `<form id="import-form"><label class="field">Input type<select id="import-type" name="kind"><option value="planes">Four analyzer images</option><option value="mosaic">2 × 2 sensor mosaic</option><option value="package">PolarBench source package</option></select></label><label class="field">Capture name<input name="name" maxlength="100" placeholder="Sample or inspection name"></label><div class="import-fields" id="import-planes">${angles}</div><div class="import-fields" id="import-mosaic" hidden><label class="field">Workpiece raw mosaic<input name="mosaic" type="file" ${canSee}></label><label class="field">Tile pattern (upper left, upper right / lower left, lower right)<select name="mosaic_layout" id="mosaic-layout">${patterns}</select></label><div class="calibration-box"><div class="calibration-head"><span class="eyebrow">CAMERA TILE CALIBRATION</span><span class="calibration-state" id="calibration-state">Not inferred</span></div><p class="modal-body-copy">Do not know which analyzer each tile holds? Upload two fixed-camera reference mosaics with known polarization directions (degrees from the horizontal edge). Each reference is evaluated on its own pixels only, so different exposures and native occlusion are handled, and no order is forced while the references stay ambiguous.</p><div class="control-row" style="--cols:2"><label class="field">Reference 1 direction °<input id="ref-direction-1" type="number" min="0" max="180" step="any" placeholder="e.g. 20"></label><label class="field">Reference 2 direction °<input id="ref-direction-2" type="number" min="0" max="180" step="any" placeholder="e.g. 75"></label></div><div class="control-row" style="--cols:2"><label class="field">Reference mosaic 1<input id="ref-file-1" type="file" ${canSee}></label><label class="field">Reference mosaic 2<input id="ref-file-2" type="file" ${canSee}></label></div><div class="flex-buttons">${button('Infer tile order','infer-mosaic','','secondary')}</div><div id="calibration-result" hidden></div></div></div><div class="import-fields" id="import-mask"><label class="field">Optional detector inclusion mask<input name="mask" type="file" ${canSee}></label></div><div class="import-fields" id="import-package" hidden><label class="field">Source ZIP<input name="package" type="file" accept=".zip,application/zip"></label></div><div class="flex-buttons"><button class="button primary" type="submit">Import</button></div></form>`);
+}
+
+function calibrationBadge(confident) {
+  return confident
+    ? '<span class="badge badge-ok">Order identified</span>'
+    : '<span class="badge badge-warn">Uncertain — review before using</span>';
+}
+
+function renderCalibration(result) {
+  const box = el('calibration-result');
+  box.hidden = false;
+  const tileRows = result.tiles.map(t => `<tr><td>${t.row}, ${t.column}</td><td>${t.angle}°</td></tr>`).join('');
+  const refRows = result.references.map((r, i) => `<tr><td>${i + 1}</td><td>${fmt(r.direction,1)}°</td><td>${fmt(r.modulation,4)}</td><td>${fmt(r.common_pixels,0)}</td><td>${r.informative ? 'usable' : 'too weak'}</td></tr>`).join('');
+  const candidateRows = result.candidates.slice(0,4).map(c => `<tr><td>${enc(c.layout.replaceAll('-', ' · '))}</td><td>${fmt(c.angular_residual,2)}°</td><td>${c.within_tolerance ? 'fits' : 'rejected'}</td></tr>`).join('');
+  const reason = result.uncertainty_reason ? `<p class="calibration-warning">${enc(result.uncertainty_reason)}</p>` : '';
+  box.innerHTML = `${calibrationBadge(result.confident)}
+    <p class="modal-body-copy">Inferred tile order <strong id="inferred-layout-text">${enc(result.inferred_layout)}</strong> · mean angular residual ${fmt(result.best_angular_residual,2)}° · margin to next order ${fmt(result.decision_margin,2)}° (needs ${fmt(result.decision_margin_required,0)}°).</p>
+    ${reason}
+    <details open><summary>Tile assignment (upper left, upper right / lower left, lower right)</summary><table class="detail-table"><thead><tr><th>Tile row, col</th><th>Analyzer</th></tr></thead><tbody>${tileRows}</tbody></table></details>
+    <details><summary>Reference evidence</summary><table class="detail-table"><thead><tr><th>Ref</th><th>Known direction</th><th>Modulation</th><th>Common px</th><th>Status</th></tr></thead><tbody>${refRows}</tbody></table></details>
+    <details><summary>Ranked angle orders</summary><table class="detail-table"><thead><tr><th>Order</th><th>Residual</th><th>Fit</th></tr></thead><tbody>${candidateRows}</tbody></table></details>
+    <div class="flex-buttons">${button(result.confident ? 'Use this order' : 'Use best fit anyway','apply-inferred','','primary')}${button('Keep manual pattern','discard-inferred','','secondary')}</div>`;
+  el('calibration-state').textContent = result.confident ? 'Identified' : 'Uncertain';
+  el('calibration-state').className = `calibration-state ${result.confident ? 'state-ok' : 'state-warn'}`;
+}
+
+async function inferMosaicOrder() {
+  const d1 = el('ref-direction-1').value, d2 = el('ref-direction-2').value;
+  if (d1 === '' || d2 === '') throw new Error('Enter the known polarization direction for both references.');
+  const f1 = el('ref-file-1').files[0], f2 = el('ref-file-2').files[0];
+  if (!f1 || !f2) throw new Error('Select both reference mosaic images.');
+  const data = new FormData();
+  data.append('reference_1', f1);
+  data.append('reference_2', f2);
+  data.append('direction_1', d1);
+  data.append('direction_2', d2);
+  const result = await request('/api/mosaic-calibration', {method:'POST', data});
+  inferredCalibration = result;
+  renderCalibration(result);
+  const select = el('mosaic-layout');
+  if (![...select.options].some(o => o.value === result.inferred_layout)) {
+    select.add(new Option(`${result.inferred_layout.replaceAll('-', ' · ')} (inferred)`, result.inferred_layout));
+  }
+  select.value = result.inferred_layout;
+  if (!result.confident) toast('The references cannot separate the tile orders. Review the evidence before importing.', true);
+  else toast('Tile order identified. Review the assignment, then import the workpiece.');
+}
+
+function applyInferredOrder() {
+  if (!inferredCalibration) return;
+  el('mosaic-layout').value = inferredCalibration.inferred_layout;
+  toast(inferredCalibration.confident ? 'Inferred tile order selected.' : 'Best-fit order selected manually — the inference was uncertain.');
+}
+
+function discardInferredOrder() {
+  inferredCalibration = null;
+  el('calibration-result').hidden = true;
+  el('calibration-state').textContent = 'Not inferred';
+  el('calibration-state').className = 'calibration-state';
+  toast('Using the manually selected tile pattern.');
 }
 function exportDialog() {
   const items = [['Map PNG','map-png'],['Linear TIFF','map-tiff'],['Evidence ZIP','evidence'],['Inspection worksheet','worksheet'],['Analyzer contact sheet','contact-sheet']];
@@ -342,6 +403,9 @@ const action = {
     toast('Capture deleted.');
   },
   'close-modal': async()=>closeModal(),
+  'infer-mosaic': async()=>{ await inferMosaicOrder(); },
+  'apply-inferred': async()=>applyInferredOrder(),
+  'discard-inferred': async()=>discardInferredOrder(),
   'map-png': async()=>downloadBlob(await processing('/download',{output:'png'},true),'polarbench-map.png'),
   'map-tiff': async()=>downloadBlob(await processing('/download',{output:'data'},true),'polarbench-map.tif'),
   'evidence': async()=>downloadBlob(await processing('/download',{output:'evidence'},true),'polarbench-evidence.zip'),
@@ -636,6 +700,11 @@ function prepareInput() {
     try {
       const form=new FormData(event.target);
       const rawKind=form.get('kind');
+      if (rawKind==='mosaic' && inferredCalibration && !inferredCalibration.confident
+          && form.get('mosaic_layout') === inferredCalibration.inferred_layout
+          && !window.confirm('The reference inference was uncertain. Open the workpiece with the best-fit tile order anyway?')) {
+        return;
+      }
       const active=rawKind==='planes' ? ['name','kind','i0','i45','i90','i135','mask'] : rawKind==='mosaic'?['name','kind','mosaic','mosaic_layout','mask']:['name','package'];
       for (const name of [...form.keys()]) {
         const current=form.get(name);
