@@ -5,9 +5,9 @@ import weakref
 from collections import OrderedDict
 from dataclasses import dataclass
 
-from . import calibration, demo, ingest, quality, registration, stokes
+from . import calibration, demo, ingest, quality, recovery, registration, stokes
 from .codec import raw_fraction, read_upload
-from .domain import ANGLES, Box, InputError, integer, label, note, object_value
+from .domain import ANGLES, Box, InputError, MissingError, integer, label, note, object_value
 from .regions import region_item
 from .settings import Processing, default_settings, parse_settings
 from .store import ProjectStore, fingerprint, source_identity
@@ -25,6 +25,7 @@ class Inspection:
     field: stokes.PolarField
     quality: quality.QualityField
     processing: Processing
+    recovery: object = None
 
     def channel(self, layer, azimuth=0):
         if layer.startswith('raw-'):
@@ -158,7 +159,11 @@ class Workbench:
         return self._cache[key]
 
     def inspect(self, record, processing):
-        key = (record['id'], fingerprint(source_identity(record)), fingerprint(processing.as_dict()))
+        recovery_identity = None
+        if processing.recovery.enabled:
+            recovery_identity = self._recovery_identity(record, processing.recovery)
+        key = (record['id'], fingerprint(source_identity(record)),
+               fingerprint(processing.as_dict()), recovery_identity)
         with self._cache_lock:
             cached = self._get_cached(key)
             if cached is not None:
@@ -180,6 +185,18 @@ class Workbench:
                         total -= removed.field.s0.size
             return inspection
 
+    def _recovery_identity(self, record, config):
+        if not config.short_id or config.short_id == record['id']:
+            raise InputError('Choose a different same-size capture as the short exposure source.')
+        try:
+            short_record = self.store.get(config.short_id)
+        except MissingError as error:
+            raise InputError('The selected short exposure capture is no longer in this workspace.') from error
+        capture = short_record['capture']
+        if (capture['width'], capture['height']) != (record['capture']['width'], record['capture']['height']):
+            raise InputError('The short exposure capture must match the opened capture dimensions.')
+        return fingerprint(source_identity(short_record))
+
     def _evaluate(self, record, processing):
         decoded = ingest.decode(self.store, record, processing.limits.mask_threshold)
         refs = calibration.reference_maps(decoded, record, processing.calibration)
@@ -188,9 +205,19 @@ class Workbench:
             for angle in ANGLES
         }
         aligned, common = registration.align_planes(corrected, processing.registration)
+        recovery_report = None
+        if processing.recovery.enabled:
+            self._recovery_identity(record, processing.recovery)
+            short_record = self.store.get(processing.recovery.short_id)
+            recovery_report = recovery.merge_recovery(
+                decoded, aligned, common, refs, processing.recovery, processing.limits,
+                processing.calibration.tuning, processing.registration, self.store, short_record,
+            )
+            aligned = recovery_report.merged
+            common = recovery_report.common
         field = stokes.reconstruct(aligned, common, decoded.mask, processing.limits, processing.zero_angle)
-        report = quality.audit(aligned, common, decoded.mask, field, processing.limits)
-        return Inspection(decoded, corrected, refs, aligned, common, field, report, processing)
+        report = quality.audit(aligned, common, decoded.mask, field, processing.limits, recovery_report)
+        return Inspection(decoded, corrected, refs, aligned, common, field, report, processing, recovery_report)
 
     def registration_suggestions(self, record, raw):
         results, _ = self.pending(record, raw.get('state'))
@@ -208,6 +235,7 @@ class Workbench:
             'quality': quality.summary(results.quality),
             'reference_maps': results.references.summary(),
             'analyzer_channels': readings,
+            'recovery': None if results.recovery is None else results.recovery.summary(),
             'processing': results.processing.as_dict(),
             'view': view.as_dict(),
         }

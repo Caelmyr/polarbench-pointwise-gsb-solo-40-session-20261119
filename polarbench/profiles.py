@@ -194,6 +194,16 @@ def probe(results, raw, view):
         'common_footprint_included': results.common.contains(x, y),
         'all_analyzers_available': bool(field.base_support[point]),
     }
+    recovery_info = None
+    if results.recovery is not None:
+        report = results.recovery
+        recovery_info = {
+            'short_capture_name': report.short_name,
+            'exposure_ratio': report.config.exposure_ratio,
+            'recovered': bool(report.recovered[point]),
+            'agreement_conflict': bool(report.conflicts[point]),
+            'angle_source': {str(angle): report.angle_source(angle, y, x) for angle in ANGLES},
+        }
     return {
         'x': x,
         'y': y,
@@ -204,6 +214,7 @@ def probe(results, raw, view):
         'layer': view.layer,
         'passed_s0': bool(field.measured[point]),
         'passed_direction': bool(field.oriented[point]),
+        'recovery': recovery_info,
         'combined': {
             'intensity': float(field.s0[point]) if field.measured[point] else None,
             'degree': float(field.degree[point]) if field.measured[point] else None,

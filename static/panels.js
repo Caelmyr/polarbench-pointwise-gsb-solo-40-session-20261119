@@ -31,7 +31,7 @@ export function legends(state) {
   return `<div class="legend-label"><span>${enc(state.description ?? '')}</span><span>${enc(state.unit)}</span></div><div class="legend-gradient" style="background:linear-gradient(90deg,${ribbon})"></div><div class="legend-ticks">${ends.map(v => `<span>${fmt(v)}</span>`).join('')}</div>`;
 }
 
-function mapPanel({config, state, project, report}) {
+function mapPanel({config, state, project, projects, report}) {
   const v = state.view;
   const current = config.layer_options.find(x => x.id === v.layer);
   const map = select('map-layer','Map',layerOptions(config),v.layer);
@@ -47,8 +47,34 @@ function mapPanel({config, state, project, report}) {
   const health = q ? metrics([['Sampled',count(q.usable)],['Axis usable',count(q.orientation_usable)],['Detector px',count(q.pixels)]]) : '<p>Reading detector coverage…</p>';
   return heading('Map controls') + section('',controls + overlays + actions(button('Save default','save-default')))
     + section('Coverage', health + zoom)
+    + recoveryPanel({state, project, projects, report})
     + section('Pixel probe', `<p>Click on the image to inspect calibrated intensity, orientation and the four native detector samples.</p><div id="probe-result" class="help-line"></div>`)
     + section('Output framing',`<p>Draw a box to crop the map or create a separate captured image set.</p>${actions(button('Crop view','crop-view'),button('New capture from box','create-crop'))}`);
+}
+
+function recoveryPanel({state, project, projects, report}) {
+  const r = state.processing.recovery;
+  const sameSize = (projects || []).filter(x => x.id !== project.id
+    && x.width === project.capture.width && x.height === project.capture.height);
+  const options = [['','Select a same-size capture'], ...sameSize.map(x => [x.id, `${x.name} (${x.width} × ${x.height})`])];
+  const picker = sameSize.length
+    ? select('recovery-short','Short exposure capture', options, r.short_capture_id || '')
+    : '<p>Import the short exposure set as a separate capture with matching detector dimensions to enable fill-in.</p>';
+  const fields = row(num('recovery-ratio','Normal / short ×',r.exposure_ratio,.1,1.0001,100000),
+    num('recovery-min-short','Min short signal',r.min_short,.001,.001,.5))
+    + num('recovery-agreement','Agreement tolerance',r.agreement,.01,.001,1);
+  const rec = report?.recovery;
+  const summary = rec ? metrics([
+      ['Recovered',count(rec.recovered_pixels)],
+      ['Short fills',count(rec.short_filled_pixels)],
+      ['Conflicts',count(rec.agreement_conflict_pixels)],
+    ]) + `<p class="help-line">Source ${enc(rec.short_capture_name)} · ×${fmt(rec.exposure_ratio,2)} exposure · main-only pixels are never replaced.</p>` : '';
+  return section('Short-exposure fill',
+    `<p>Recover clipped angles from an in-place short exposure set. Pixels need four trusted angles that agree after scaling; mask exclusions stay blank.</p>`
+    + check('recovery-enabled','Enable short-exposure fill',r.enabled)
+    + picker + fields
+    + actions(button('Apply fill','apply-recovery','','primary'),button('Clear fill','clear-recovery'))
+    + summary);
 }
 
 function sourcePanel({project:p, state, config}) {

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from .calibration import Calibration
 from .domain import ANGLES, Box, DisplayRange, InputError, bool_value, enum_value, integer, number, object_value
 from .quality import BY_ISSUE
+from .recovery import Recovery
 from .registration import Registration
 from .stokes import Limits
 
@@ -57,6 +58,7 @@ class Processing:
     registration: Registration
     limits: Limits
     zero_angle: float
+    recovery: Recovery
 
     @classmethod
     def parse(cls, raw, references):
@@ -66,6 +68,7 @@ class Processing:
             Registration.parse(data.get('registration', {})),
             Limits.parse(data.get('limits', {})),
             number(data.get('zero_angle', 0), 'Reference direction', 0, 180) % 180,
+            Recovery.parse(data.get('recovery', {})),
         )
 
     def as_dict(self):
@@ -74,6 +77,7 @@ class Processing:
             'registration': self.registration.as_dict(),
             'limits': self.limits.as_dict(),
             'zero_angle': self.zero_angle,
+            'recovery': self.recovery.as_dict(),
         }
 
 

@@ -28,6 +28,7 @@ ISSUES = (
     Issue('closure', 64, 'Analyzer pairs disagree', (224, 91, 79), 'Opposite analyzer pairs estimate different total intensities.'),
     Issue('physical', 128, 'Degree exceeds tolerance', (235, 122, 159), 'Estimated polarized intensity is physically too large.'),
     Issue('weak-axis', 256, 'Direction too weak', (215, 200, 113), 'Intensity and degree are usable but orientation is too weak.'),
+    Issue('recovery-conflict', 512, 'Short exposure disagreement', (158, 222, 240), 'The scaled short exposure disagrees with a usable main sample, so recovery is withheld here.'),
 )
 BY_ISSUE = {issue.key: issue for issue in ISSUES}
 HEALTHY = (65, 167, 135)
@@ -54,11 +55,11 @@ class QualityField:
         return [issue.key for issue in ISSUES if code & issue.bit]
 
 
-def audit(aligned, common, mask, field, limits):
+def audit(aligned, common, mask, field, limits, recovery=None):
     geometry, native, reference, saturation, keep = intersection_support(aligned, common, mask)
     flags = np.zeros(field.shape, dtype=np.uint16)
     base = field.base_support
-    conditions = (
+    conditions = [
         ~geometry,
         geometry & ~native,
         geometry & ~reference,
@@ -68,7 +69,9 @@ def audit(aligned, common, mask, field, limits):
         base & (field.pair_error > limits.max_pair_error),
         base & (field.degree > limits.max_degree),
         field.measured & ~field.oriented,
-    )
+    ]
+    if recovery is not None:
+        conditions.append(geometry & recovery.conflicts)
     for issue, condition in zip(ISSUES, conditions):
         flags[condition] |= issue.bit
     return QualityField(

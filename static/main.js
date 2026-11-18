@@ -506,6 +506,28 @@ const action = {
     catch (error) {state.processing.limits=prior; throw error;}
     toast('Quality thresholds updated.');
   },
+  'apply-recovery': async()=>{
+    const prior=copy(state.processing.recovery);
+    const settings={
+      enabled:checked('recovery-enabled'),
+      short_capture_id:value('recovery-short')||null,
+      exposure_ratio:number('recovery-ratio'),
+      min_short:number('recovery-min-short'),
+      agreement:number('recovery-agreement'),
+    };
+    if (settings.enabled && !settings.short_capture_id) throw new Error('Select a same-size short exposure capture first.');
+    state.processing.recovery=settings;
+    try { await updateMap(true); renderPanel(); }
+    catch (error) { state.processing.recovery=prior; renderPanel(); throw error; }
+    toast(settings.enabled ? 'Short-exposure fill applied.' : 'Short-exposure fill updated.');
+  },
+  'clear-recovery': async()=>{
+    const prior=copy(state.processing.recovery);
+    state.processing.recovery={...prior,enabled:false};
+    try { await updateMap(true); renderPanel(); }
+    catch (error) { state.processing.recovery=prior; renderPanel(); throw error; }
+    toast('Short-exposure fill disabled.');
+  },
   'quality-map': async()=>{changeLayer('quality'); await updateMap(true);},
   'quality-focus': async(button)=>{changeLayer('quality'); state.view.quality_focus=button.dataset.kind; await updateMap(false);},
   'quality-patches': async()=>{
@@ -737,7 +759,12 @@ function pointerControls() {
         if (el('probe-result')) el('probe-result').textContent=`(${p.x}, ${p.y}) · ${fmt(p.shown_value,4)} · ${status}`;
         const channels=Object.entries(p.raw_planes).map(([a,x])=>[`${a}°`,x?`${x.sensor_x??x.x}, ${x.sensor_y??x.y}`:'—',x?.code??'—',fmt(p.aligned_planes[a].corrected,4)]);
         const health=metrics([['Intensity',fmt(p.combined.intensity,4)],['Linear degree',fmt(p.combined.degree,4)],['Axis',p.combined.direction==null?'—':`${fmt(p.combined.direction,1)}°`]]);
-        showEvidence(`Pixel ${p.x}, ${p.y}`,`<div class="output-info">${enc(status)}</div>${health}${detailTable(['Analyzer','Native x,y','Raw code','Corrected'],channels)}`);
+        const rec=p.recovery ? metrics([
+          ['Fill', p.recovery.recovered?'recovered':(p.recovery.agreement_conflict?'conflict':'none')],
+          ['Exposure',`×${fmt(p.recovery.exposure_ratio,2)}`],
+          ['Sources',Object.values(p.recovery.angle_source).join(', ')],
+        ]) : '';
+        showEvidence(`Pixel ${p.x}, ${p.y}`,`<div class="output-info">${enc(status)}</div>${health}${rec}${detailTable(['Analyzer','Native x,y','Raw code','Corrected'],channels)}`);
       } catch(error) { toast(error.message,true); }
     }
     redrawSelection();
