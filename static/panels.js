@@ -59,6 +59,9 @@ function sourcePanel({project:p, state, config}) {
     return `<div class="item"><div><strong>${enc(result)}</strong><small>${enc(x.name)} · ${x.bits}-bit</small></div>${download('Raw',`/api/projects/${id}/sources/${field}`)}</div>`;
   }).join('');
   const offsets = config.angles.slice(1).map(a => row(num(`dx-${a}`,`${a}° Δx`,state.processing.registration[a].dx,1,-160,160),num(`dy-${a}`,`${a}° Δy`,state.processing.registration[a].dy,1,-160,160))).join('');
+  const pairPicker = p.regions.length >= 2
+    ? row(select('register-region-a','Reference region A',regionOptions(p,'Choose region'),''),select('register-region-b','Reference region B',regionOptions(p,'Choose region'),'')) + actions(button('Suggest from two regions','suggest-register-pair'))
+    : '<p>Save two detector regions in the Measure tab to combine their shift evidence.</p>';
   const cal = state.processing.calibration;
   const tunings = config.angles.map(a => row(num(`black-${a}`,`${a}° black`,cal.channels[a].black,.005,0,.25),num(`gain-${a}`,`${a}° gain`,cal.channels[a].gain,.02,.25,4))).join('');
   const refs = ['dark','flat'].map(kind => {
@@ -72,7 +75,7 @@ function sourcePanel({project:p, state, config}) {
     + row(num('scale-x','Horizontal pitch',pitch.pitch_x ?? 0.1,.0001,0.00000001,1000),num('scale-y','Vertical pitch',pitch.pitch_y ?? 0.1,.0001,0.00000001,1000))
     + actions(button('Set scale','set-scale'),button('Clear','clear-scale'));
   return heading('Source preparation') + section('Original images',`<div class="item-list">${sourceLinks}</div>${actions(button('Contact sheet','contact-sheet'),cap.type==='mosaic'?button('Sensor tiles','mosaic-review'):'',download('Source package',`/api/projects/${id}/source-package`))}`)
-    + section('Register analyzers', `<p>0° defines detector coordinates. Inspect the overlay before retaining estimated shifts.</p>${offsets}${actions(button('Apply shifts','apply-register'),button('Suggest shifts','suggest-register'),button('Registration overlay','review-register'))}`)
+    + section('Register analyzers', `<p>0° defines detector coordinates. Inspect the overlay before retaining estimated shifts.</p>${offsets}${actions(button('Apply shifts','apply-register'),button('Suggest shifts','suggest-register'),button('Registration overlay','review-register'))}<details><summary>Combine two saved regions</summary><p>Repeating texture can fool a single window. Two regions are estimated together: a shift is filled in when both support one candidate, or when one region is conclusive on its own. Strong but disagreeing evidence is reported as a conflict and left untouched.</p>${pairPicker}</details>`)
     + section('Intensity correction',`<p>Dark and flat maps are sampled in native detector coordinates before alignment.</p>${refs}${row(check('use-dark','Apply dark',cal.use_dark,!p.references.dark),check('use-flat','Apply flat',cal.use_flat,!p.references.flat))}<details><summary>Per-angle tuning</summary>${tunings}</details>${actions(button('Apply correction','apply-calibration'),button('Neutral balance','neutral-balance'))}`)
     + section('Detector scale',scale)
     + section('Capture details',actions(button('Rename','rename-capture'),button('Delete capture','delete-capture','','danger small')));

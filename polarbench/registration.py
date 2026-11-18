@@ -10,6 +10,11 @@ from .domain import ANGLES, Box, InputError, Offset, as_angle_dict, integer, obj
 
 MAX_SHIFT = 160
 
+MIN_CORRELATION = 0.18
+PEAK_SEPARATION = 0.015
+PLAUSIBLE_MARGIN = 0.05
+PLAUSIBLE_LIMIT = 5
+
 
 @dataclass(frozen=True)
 class Registration:
@@ -140,17 +145,17 @@ def _rank(candidates, a, b, safe_a, safe_b, step):
     return sorted(scored, key=lambda entry: (-entry[1], abs(entry[0].dx) + abs(entry[0].dy), entry[0].dy, entry[0].dx))
 
 
-def _find_offset(reference, moving, region: Box, radius: int):
+def _scan_window(reference, moving, region: Box, radius: int):
     scale = max(1, (max(reference.shape) + 479) // 480)
     a, b = reference[region.slices], moving[region.slices]
     a_values, a_valid = _texture(a, np.isfinite(a))
     b_values, b_valid = _texture(b, np.isfinite(b))
     if min(a_valid.sum(), b_valid.sum()) < 100:
-        return {'usable': False, 'reason': 'Too little common usable texture in the registration window.'}
+        return {'scored': False, 'reason': 'Too little common usable texture in the registration window.'}
     reduced = np.s_[::scale, ::scale]
     a_coarse, b_coarse = a_valid[reduced], b_valid[reduced]
     if not a_coarse.any() or not b_coarse.any():
-        return {'usable': False, 'reason': 'Texture disappears at the coarse search scale. Choose a smaller window.'}
+        return {'scored': False, 'reason': 'Texture disappears at the coarse search scale. Choose a smaller window.'}
     offsets = _candidate_offsets(
         a_values[reduced], b_values[reduced], a_coarse, b_coarse, (radius + scale - 1) // scale,
     )
@@ -162,17 +167,39 @@ def _find_offset(reference, moving, region: Box, radius: int):
                 local_candidates.add(Offset(dx, dy))
     ranked = _rank(local_candidates, a_values, b_values, a_valid, b_valid, max(1, scale))
     if not ranked:
-        return {'usable': False, 'reason': 'No shift has enough textured overlap to score.'}
+        return {'scored': False, 'reason': 'No shift has enough textured overlap to score.'}
     best, correlation, pixels = ranked[0]
     alternatives = [entry for entry in ranked[1:] if max(abs(entry[0].dx - best.dx), abs(entry[0].dy - best.dy)) > 1]
     gap = (correlation - alternatives[0][1]) if alternatives else None
     return {
-        'usable': correlation >= 0.18 and (gap is None or gap >= 0.015),
-        'offset': best.as_dict(),
+        'scored': True,
+        'ranked': ranked,
+        'best': best,
         'correlation': correlation,
         'overlap_samples': pixels,
         'distinct_peak_margin': gap,
         'at_search_limit': max(abs(best.dx), abs(best.dy)) == radius,
+    }
+
+
+def _confident(scan):
+    if not scan['scored']:
+        return False
+    gap = scan['distinct_peak_margin']
+    return scan['correlation'] >= MIN_CORRELATION and (gap is None or gap >= PEAK_SEPARATION)
+
+
+def _find_offset(reference, moving, region: Box, radius: int):
+    scan = _scan_window(reference, moving, region, radius)
+    if not scan['scored']:
+        return {'usable': False, 'reason': scan['reason']}
+    return {
+        'usable': _confident(scan),
+        'offset': scan['best'].as_dict(),
+        'correlation': scan['correlation'],
+        'overlap_samples': scan['overlap_samples'],
+        'distinct_peak_margin': scan['distinct_peak_margin'],
+        'at_search_limit': scan['at_search_limit'],
         'reason': 'Low confidence when overlap, texture match, or separation between peaks is weak.',
     }
 
@@ -186,3 +213,138 @@ def suggest_registration(planes, raw, width, height):
     available = {a: np.where(p.valid, p.values, np.nan) for a, p in planes.items()}
     output = {str(angle): _find_offset(available[0], available[angle], box, radius) for angle in ANGLES[1:]}
     return {'reference_angle': 0, 'window': box.as_dict(), 'search_radius': radius, 'channels': output}
+
+
+def _close(first: Offset, second: Offset):
+    return max(abs(first.dx - second.dx), abs(first.dy - second.dy)) <= 1
+
+
+def _distinct_peaks(ranked):
+    if not ranked:
+        return []
+    cutoff = max(MIN_CORRELATION, ranked[0][1] - PLAUSIBLE_MARGIN)
+    peaks = []
+    for offset, correlation, _pixels in ranked:
+        if correlation < cutoff:
+            break
+        if any(_close(offset, kept) for kept, _ in peaks):
+            continue
+        peaks.append((offset, correlation))
+        if len(peaks) >= PLAUSIBLE_LIMIT:
+            break
+    return peaks
+
+
+def _shared_peaks(first, second):
+    supported = [
+        (offset, correlation)
+        for offset, correlation in (*first, *second)
+        if any(_close(offset, other) for other, _ in first)
+        and any(_close(offset, other) for other, _ in second)
+    ]
+    clusters = []
+    for entry in supported:
+        for cluster in clusters:
+            if any(_close(entry[0], other) for other, _ in cluster):
+                cluster.append(entry)
+                break
+        else:
+            clusters.append([entry])
+    merged = True
+    while merged:
+        merged = False
+        for left in range(len(clusters)):
+            for right in range(left + 1, len(clusters)):
+                if any(_close(a[0], b[0]) for a in clusters[left] for b in clusters[right]):
+                    clusters[left] += clusters.pop(right)
+                    merged = True
+                    break
+            if merged:
+                break
+    return [max(cluster, key=lambda entry: entry[1]) for cluster in clusters]
+
+
+def _window_evidence(scan, peaks):
+    if not scan['scored']:
+        return {'scored': False, 'confident': False, 'reason': scan['reason']}
+    return {
+        'scored': True,
+        'confident': _confident(scan),
+        'best': scan['best'].as_dict(),
+        'correlation': scan['correlation'],
+        'overlap_samples': scan['overlap_samples'],
+        'distinct_peak_margin': scan['distinct_peak_margin'],
+        'at_search_limit': scan['at_search_limit'],
+        'plausible': [{'offset': offset.as_dict(), 'correlation': correlation} for offset, correlation in peaks],
+    }
+
+
+def _combine_evidence(scan_a, scan_b):
+    peaks_a = _distinct_peaks(scan_a['ranked']) if scan_a['scored'] else []
+    peaks_b = _distinct_peaks(scan_b['ranked']) if scan_b['scored'] else []
+    confident_a, confident_b = _confident(scan_a), _confident(scan_b)
+    result = {'evidence': [_window_evidence(scan_a, peaks_a), _window_evidence(scan_b, peaks_b)], 'shared': []}
+    if not peaks_a and not peaks_b:
+        return dict(result, status='unusable', usable=False, offset=None, correlation=None,
+                    reason='Neither reference region offers usable texture in this channel.')
+    if not peaks_a or not peaks_b:
+        scan, confident = (scan_a, confident_a) if peaks_a else (scan_b, confident_b)
+        silent = 'second' if peaks_a else 'first'
+        if not confident:
+            return dict(result, status='review', usable=False, offset=None, correlation=None,
+                        reason=f'The {silent} region offers no usable texture and the other is not conclusive on its own.')
+        return dict(result, status='proposed', usable=True, offset=scan['best'].as_dict(), correlation=scan['correlation'],
+                    reason=f'The {silent} region offers no usable texture; the other region is conclusive on its own.')
+    if confident_a and confident_b:
+        if _close(scan_a['best'], scan_b['best']):
+            scan = scan_a if scan_a['correlation'] >= scan_b['correlation'] else scan_b
+            return dict(result, status='proposed', usable=True, offset=scan['best'].as_dict(), correlation=scan['correlation'],
+                        reason='Both regions are conclusive and agree on the shift.')
+        return dict(result, status='conflict', usable=False, offset=None, correlation=None,
+                    reason='Both regions are conclusive but point to different shifts. No offset was filled in.')
+    if confident_a != confident_b:
+        scan, other_peaks = (scan_a, peaks_b) if confident_a else (scan_b, peaks_a)
+        support = ' and the other region supports it' if any(_close(scan['best'], other) for other, _ in other_peaks) \
+            else '; the other region is inconclusive'
+        return dict(result, status='proposed', usable=True, offset=scan['best'].as_dict(), correlation=scan['correlation'],
+                    reason=f'One region is conclusive{support}.')
+    shared = _shared_peaks(peaks_a, peaks_b)
+    if len(shared) == 1:
+        offset, correlation = shared[0]
+        return dict(result, status='proposed', usable=True, offset=offset.as_dict(), correlation=correlation,
+                    reason='Only one candidate shift is plausible in both regions.')
+    if not shared:
+        return dict(result, status='review', usable=False, offset=None, correlation=None,
+                    reason='Each region alone is ambiguous and they share no candidate shift.')
+    return dict(result, status='ambiguous', usable=False, offset=None, correlation=None,
+                shared=[offset.as_dict() for offset, _ in shared],
+                reason='More than one candidate shift is plausible in both regions.')
+
+
+def _search_radius(state, box: Box):
+    limit = min(MAX_SHIFT, min(box.width, box.height) // 3)
+    if state.get('radius') is None:
+        return max(1, min(16, limit))
+    return integer(state['radius'], 'Search radius', 1, limit)
+
+
+def suggest_registration_pair(planes, windows, raw):
+    state = object_value(raw, 'Registration request')
+    radii = [_search_radius(state, box) for _name, box in windows]
+    available = {a: np.where(p.valid, p.values, np.nan) for a, p in planes.items()}
+    channels = {}
+    for angle in ANGLES[1:]:
+        scans = [
+            _scan_window(available[0], available[angle], box, radius)
+            for (_name, box), radius in zip(windows, radii)
+        ]
+        channels[str(angle)] = _combine_evidence(*scans)
+    return {
+        'reference_angle': 0,
+        'mode': 'two-region',
+        'regions': [
+            {'name': name, 'window': box.as_dict(), 'search_radius': radius}
+            for (name, box), radius in zip(windows, radii)
+        ],
+        'channels': channels,
+    }

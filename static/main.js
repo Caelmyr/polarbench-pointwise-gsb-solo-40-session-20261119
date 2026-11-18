@@ -371,6 +371,32 @@ const action = {
     showEvidence('Registration suggestions',detailTable(['Analyzer','Shift','Correlation','Status'],table));
     toast('Review the suggestions, then apply shifts.');
   },
+  'suggest-register-pair': async()=>{
+    const first=value('register-region-a'), second=value('register-region-b');
+    if (!first || !second) throw new Error('Choose two saved detector regions. Save regions from the Measure tab first.');
+    if (first===second) throw new Error('Choose two different regions.');
+    const outcome=await processing('/registration/suggest',{regions:[first,second]});
+    const [nameA,nameB]=outcome.regions.map(r=>r.name);
+    const labels={proposed:'Proposed',conflict:'Conflict — not filled',ambiguous:'Ambiguous — not filled',review:'Review manually',unusable:'No usable evidence'};
+    const rows=[];
+    let filled=0, conflicts=0, undecided=0;
+    for (const [angle,item] of Object.entries(outcome.channels)) {
+      const cell=(e)=>e.scored?`${e.best.dx}, ${e.best.dy} · ${fmt(e.correlation)}`:'—';
+      let note=item.reason||'';
+      if (item.status==='ambiguous' && item.shared?.length) note+=` Shared candidates: ${item.shared.map(o=>`${o.dx}, ${o.dy}`).join(' · ')}.`;
+      if (item.status==='proposed') {
+        el(`dx-${angle}`).value=item.offset.dx;
+        el(`dy-${angle}`).value=item.offset.dy;
+        filled++;
+      } else if (item.status==='conflict') conflicts++;
+      else undecided++;
+      rows.push([`${angle}°`,cell(item.evidence[0]),cell(item.evidence[1]),item.offset?`${item.offset.dx}, ${item.offset.dy}`:'—',labels[item.status]||item.status,note]);
+    }
+    showEvidence('Two-region registration suggestions',detailTable(['Analyzer',`${nameA} best`,`${nameB} best`,'Shift','Status','Note'],rows));
+    if (conflicts) toast(`Conflicting region evidence for ${conflicts} angle(s) — those shifts were not filled in.`,true);
+    else if (undecided) toast(`${undecided} angle(s) need a manual decision; ${filled} filled in.`);
+    else toast('Review the combined suggestions, then apply shifts.');
+  },
   'review-register': async()=>{
     const options={angle:45,box:activeBox(),mode:'overlay'};
     const [data,image] = await Promise.all([processing('/registration/review',options),processing('/registration/review',{...options,output:'png'},true)]);

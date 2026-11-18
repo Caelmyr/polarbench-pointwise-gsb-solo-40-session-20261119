@@ -7,8 +7,8 @@ from dataclasses import dataclass
 
 from . import calibration, demo, ingest, quality, registration, stokes
 from .codec import raw_fraction, read_upload
-from .domain import ANGLES, Box, InputError, integer, label, note, object_value
-from .regions import region_item
+from .domain import ANGLES, Box, InputError, integer, label, list_value, note, object_value
+from .regions import Geometry, get_region, region_item
 from .settings import Processing, default_settings, parse_settings
 from .store import ProjectStore, fingerprint, source_identity
 
@@ -194,7 +194,18 @@ class Workbench:
 
     def registration_suggestions(self, record, raw):
         results, _ = self.pending(record, raw.get('state'))
+        if raw.get('regions') is not None:
+            windows = [self._registration_window(record, region_id, results.decoded) for region_id in _region_pair(raw)]
+            return registration.suggest_registration_pair(results.prepared, windows, raw)
         return registration.suggest_registration(results.prepared, raw, results.decoded.width, results.decoded.height)
+
+    @staticmethod
+    def _registration_window(record, region_id, decoded):
+        item = get_region(record, region_id)
+        box = Geometry.parse(item['geometry'], decoded.width, decoded.height).box
+        if min(box.width, box.height) < 16:
+            raise InputError(f"Saved region '{item['name']}' is smaller than the 16 × 16 registration window minimum.")
+        return item['name'], box
 
     def diagnostics(self, record, state):
         results, view = self.pending(record, state)
@@ -217,6 +228,13 @@ class Workbench:
             keys = [key for key in self._cache if key[0] == project_id]
             for key in keys:
                 self._cache.pop(key)
+
+
+def _region_pair(raw):
+    ids = list_value(raw.get('regions'), 'Registration regions', 2)
+    if len(ids) != 2 or ids[0] == ids[1]:
+        raise InputError('Choose two different saved regions to combine shift evidence.')
+    return ids
 
 
 def revision_of(data):

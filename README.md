@@ -25,7 +25,7 @@ For Python execution, create a virtual environment using Python 3.11 or 3.12, in
 | --- | --- |
 | Four-angle capture | Import 0°, 45°, 90° and 135° grayscale images. Source download returns the original bytes. |
 | Packed detector import | Import an even-sized 2 × 2 micro-polarizer mosaic with a known parity order. **Sources → Sensor tiles** shows the named detector lanes. |
-| Inter-frame registration | Use the **Shifted laminate** demo or your own sequential capture. Suggest or set integer shifts relative to 0°, then review the overlay and texture agreement. |
+| Inter-frame registration | Use the **Shifted laminate** demo or your own sequential capture. Suggest or set integer shifts relative to 0°, then review the overlay and texture agreement. Where repeating texture fools a single window, combine two saved regions: agreeing or conclusive evidence fills the shift, while strong disagreement is flagged as a conflict and left for manual review. |
 | Intensity calibration | Upload dark and flat frames, choose a flat normalization window, inspect reference evidence and apply reference correction or per-angle black/gain. |
 | Stokes reconstruction | Inspect intensity, Q/U, polarized intensity, degree and orientation from common valid support. Change the angular zero against a known axis. |
 | Virtual analyzer | Review one analyzer angle, compare theoretical per-pixel bounds or examine a region through a sweep of angles. |
