@@ -1,0 +1,14 @@
+name: solo43-polarbench
+services:
+  workbench:
+    build: .
+    image: solo43-polarbench:1.0
+    network_mode: bridge
+    ports:
+      - "127.0.0.1:${POLARBENCH_PORT:-18943}:18943"
+    volumes:
+      - polarbench-data:/data
+    init: true
+    restart: unless-stopped
+volumes:
+  polarbench-data:

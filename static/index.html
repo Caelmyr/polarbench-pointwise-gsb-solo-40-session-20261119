@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Inspect linear-polarization captures, compare detector evidence and document material surfaces.">
+  <meta name="theme-color" content="#12171e">
+  <title>PolarBench · Surface inspection</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script type="module" src="/static/main.js"></script>
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand" aria-label="PolarBench">
+      <span class="brand-icon" aria-hidden="true"><i></i><b></b></span>
+      <div><strong>Polar<span>Bench</span></strong><small>Surface inspection</small></div>
+    </div>
+    <div class="header-meta"><span class="dot" id="connection-dot"></span><span id="connection-text">Connecting</span></div>
+    <button class="button primary" id="new-capture">＋ Import capture</button>
+  </header>
+  <div class="shell">
+    <aside class="capture-rail" aria-label="Workspace captures">
+      <div class="rail-top"><span class="eyebrow">WORKSPACE</span><span class="rail-count" id="capture-count">0</span></div>
+      <nav id="capture-list" class="capture-list" aria-label="Captures"></nav>
+      <div class="rail-bottom">
+        <span class="eyebrow">DEMONSTRATIONS</span>
+        <div id="demo-list" class="demo-list"></div>
+      </div>
+    </aside>
+    <main class="workspace" id="workspace">
+      <div id="empty-screen" class="empty-screen">
+        <div class="empty-icon" aria-hidden="true"><i></i><b></b></div>
+        <h1>Inspect a polarized capture</h1>
+        <p>Open four analyzer images or a raw micro-polarizer mosaic to see where the surface reflects polarized light.</p>
+        <div class="empty-actions"><button id="empty-demo" class="button primary">Open coated panel</button><button id="empty-import" class="button secondary">Import capture</button></div>
+      </div>
+      <div id="active-screen" class="active-screen" hidden>
+        <section class="workspace-heading">
+          <div><div class="crumb">CAPTURES <span aria-hidden="true">/</span> <span id="view-caption">LIVE INSPECTION</span></div><h1 id="project-name"></h1><p id="project-meta"></p></div>
+          <div class="heading-actions"><button class="button secondary" id="save-view">Save view</button><button class="button primary" id="export-view">Export</button></div>
+        </section>
+        <nav class="tabs" id="tool-tabs" aria-label="Inspection tools">
+          <button type="button" data-tab="map" aria-selected="true">Map</button>
+          <button type="button" data-tab="sources" aria-selected="false">Sources</button>
+          <button type="button" data-tab="measure" aria-selected="false">Measure</button>
+          <button type="button" data-tab="quality" aria-selected="false">Quality</button>
+          <button type="button" data-tab="compare" aria-selected="false">Compare</button>
+          <button type="button" data-tab="views" aria-selected="false">Saved views</button>
+        </nav>
+        <div class="work-grid">
+          <section class="center-column" aria-label="Detector viewer">
+            <div class="viewer-card">
+              <div class="viewer-toolbar">
+                <div class="toolbar-state"><span class="dot"></span><strong id="frame-label">Detector map</strong></div>
+                <div class="tools" id="select-tools" aria-label="Detector selection mode">
+                  <button data-tool="probe" type="button" aria-pressed="true" title="Probe a detector pixel">Probe</button>
+                  <button data-tool="box" type="button" aria-pressed="false" title="Drag a detector region">Box</button>
+                  <button data-tool="line" type="button" aria-pressed="false" title="Drag a detector scan line">Line</button>
+                  <button id="fit-detector" type="button" title="Return to entire detector">Fit</button>
+                </div>
+              </div>
+              <div class="viewport" id="viewport">
+                <div class="canvas-wrap" id="canvas-wrap">
+                  <img id="map-image" alt="Polarization detector map" draggable="false">
+                  <canvas id="selection-canvas" aria-label="Interactive detector selection"></canvas>
+                </div>
+                <div id="map-loading" class="map-loading" hidden>Rendering detector map…</div>
+              </div>
+              <div class="viewer-footer"><span id="pointer-label">Move over the map to read coordinates</span><span id="viewport-status"></span></div>
+            </div>
+            <div class="legend-card" id="legend-card"></div>
+            <section class="output-card" id="output-card" hidden><div class="output-heading"><div><span class="eyebrow">EVIDENCE</span><h2 id="output-title"></h2></div><button type="button" id="clear-output" class="quiet" aria-label="Close evidence">×</button></div><div id="output-content"></div></section>
+          </section>
+          <aside class="inspector" aria-label="Inspector controls"><section id="inspector-panel" class="inspector-panel"></section></aside>
+        </div>
+      </div>
+    </main>
+  </div>
+  <dialog id="modal" class="modal"><div class="modal-heading"><h2 id="modal-title"></h2><button id="modal-close" class="quiet" type="button" aria-label="Close dialog">×</button></div><div id="modal-body"></div></dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>
