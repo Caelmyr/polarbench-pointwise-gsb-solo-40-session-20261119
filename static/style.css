@@ -204,3 +204,10 @@ label.field { display: grid; gap: 5px; min-width: 0; color: #abb9ca; font-size: 
 .panel-section details + .control-row { margin-top: 12px; }
 .panel-section .metrics + p { margin-top: 9px; }
 .output-card .detail-table { margin-top: 9px; }
+.calibration-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 9px 10px; margin: 11px 0; }
+.calibration-grid .field { margin: 0; }
+#calibration-result .metrics { margin: 10px 0; }
+#calibration-result .detail-table { margin: 10px 0; }
+.calibration-warning { color: #f3c58d; background: #332a1f; border: 1px solid #6b5536; border-radius: 6px; padding: 8px 10px; font-size: 11px; line-height: 1.5; margin: 9px 0; }
+.detail-table tr.calibration-excluded td { color: #f0a89f; }
+.detail-table tr.calibration-excluded td:first-child::before { content: '! '; color: #f3a29a; font-weight: 700; }

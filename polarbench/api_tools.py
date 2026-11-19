@@ -38,6 +38,20 @@ def clear_scale(project_id):
     return return_project(updated)
 
 
+@api.post('/scale/calibration-preview')
+def calibration_preview(project_id):
+    case = loaded_case(project_id, 'Line calibration')
+    return scale.calibrate_from_lines(case.record, case.options)
+
+
+@api.post('/scale/calibration')
+def calibration_apply(project_id):
+    case = loaded_case(project_id, 'Line calibration')
+    updated = store().update(project_id, lambda record: scale.apply_calibrated_scale(record, case.options),
+                             expected_revision=revision_of(case.options))
+    return return_project(updated)
+
+
 @api.post('/spatial-measurement')
 def spatial_measurement(project_id):
     case = loaded_case(project_id, 'Spatial measurement')

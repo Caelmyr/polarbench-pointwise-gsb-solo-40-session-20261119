@@ -7,7 +7,7 @@ const OVERLAY = el('selection-canvas');
 const context = OVERLAY.getContext('2d');
 let config, projects = [], project = null, state = null, report = null, tab = 'map', tool = 'probe';
 let target = {}, regionId = '', drag = null, viewport = null, analyzedSequence = 0, captureSequence = 0;
-let viewURL, evidenceURL, toastTimer, previewTimer, mapMode = 'inspection';
+let viewURL, evidenceURL, toastTimer, previewTimer, mapMode = 'inspection', calibrationReport = null;
 
 function toast(text, error=false) {
   el('toast').textContent = text;
@@ -304,6 +304,96 @@ function exportDialog() {
   openModal('Export current inspection',`<p class="modal-body-copy">The map and worksheet use the current detector window and display settings.</p><div class="flex-buttons">${items.filter(x=>!x[1].includes('tiff') || state.view.layer!=='quality').map(([label,a])=>button(label,a,'','secondary')).join('')}</div>`);
 }
 
+const CALIBRATION_SOURCES = () => {
+  const sources = project.profiles.map(item => ({key:`profile:${item.id}`, label:item.name, geometry:item.geometry}));
+  if (target.line) sources.unshift({key:'live', label:'Drawn line', geometry:target.line});
+  return sources;
+};
+function calibrationOptions(selected) {
+  const sources = CALIBRATION_SOURCES();
+  const blank = `<option value="" ${selected?'':'selected'}>Select a calibration line…</option>`;
+  return blank + sources.map(source => option(source.key, source.label, selected)).join('');
+}
+function calibrationSource(key) {
+  return CALIBRATION_SOURCES().find(source => source.key === key) || null;
+}
+function openCalibrationDialog() {
+  calibrationReport = null;
+  const sources = CALIBRATION_SOURCES();
+  if (sources.length < 3) {
+    openModal('Calibrate from lines', `<p class="modal-body-copy">Three calibration lines are required. Save scan lines with the Line tool (Measure tab), or keep one line drawn, then reopen this dialog.</p><div class="flex-buttons">${button('Close','close-modal','','secondary')}</div>`);
+    return;
+  }
+  const unit = value('scale-unit') || project.scale?.unit || 'mm';
+  const picks = sources.slice(0, 3).map(source => source.key);
+  const rows = [1,2,3].map(n => `<label class="field">Calibration line ${n}<select id="cal-line-${n}">${calibrationOptions(picks[n-1])}</select></label><label class="field">Measured length (${enc(unit)})<input id="cal-length-${n}" type="number" step="any" min="0.000001" placeholder="Caliper reading"></label>`).join('');
+  openModal('Calibrate from lines',
+    `<p class="modal-body-copy">Choose the three stored calibration lines and enter the length measured with calipers. A preview shows each converted length against the reading; the existing scale is not replaced until you apply it.</p>
+     <input id="cal-unit" type="hidden" value="${enc(unit)}">
+     <div class="calibration-grid">${rows}</div>
+     <div id="calibration-result"></div>
+     <div class="flex-buttons">${button('Preview conversion','calibration-preview','','primary')}${button('Close','close-modal','','secondary')}</div>`);
+}
+function calibrationPayload() {
+  const lines = [];
+  const used = new Set();
+  for (const n of [1,2,3]) {
+    const key = value(`cal-line-${n}`);
+    const source = calibrationSource(key);
+    if (!source) throw new Error(`Choose calibration line ${n}.`);
+    if (used.has(key)) throw new Error('Each calibration line must be different.');
+    used.add(key);
+    const length = Number(el(`cal-length-${n}`).value);
+    if (!Number.isFinite(length) || length <= 0) throw new Error(`Enter the measured length for line ${n}.`);
+    lines.push({line:source.geometry, length});
+  }
+  return {unit:value('cal-unit'), lines, ...revision()};
+}
+async function runCalibrationPreview() {
+  const resultBox = el('calibration-result');
+  resultBox.innerHTML = '<p class="modal-body-copy">Estimating horizontal and vertical scales…</p>';
+  let report;
+  try {
+    report = await forCapture('/scale/calibration-preview','POST',calibrationPayload());
+  } catch(error) {
+    resultBox.innerHTML = `<p class="calibration-warning">${enc(error.message)}</p>`;
+    return;
+  }
+  calibrationReport = report;
+  resultBox.innerHTML = calibrationResultHtml(report);
+}
+function calibrationResultHtml(report) {
+  const sign = value => `${value > 0 ? '+' : ''}${(value*100).toFixed(2)}%`;
+  const pitchText = value => value.toPrecision(4);
+  const rows = report.lines.map((item, index) => {
+    const excluded = report.excluded_indexes.includes(index);
+    return `<tr class="${excluded?'calibration-excluded':''}"><td>Line ${index+1}${excluded?' · excluded':''}</td><td>${fmt(item.measured_length,4)}</td><td>${item.converted_length==null?'—':fmt(item.converted_length,4)}</td><td>${item.relative_error==null?'—':sign(item.relative_error)}</td></tr>`;
+  }).join('');
+  const proposal = report.proposed_scale;
+  const summary = proposal
+    ? `<div class="metrics"><div><span>Horizontal pitch</span><strong>${pitchText(proposal.pitch_x)}</strong></div><div><span>Vertical pitch</span><strong>${pitchText(proposal.pitch_y)}</strong></div><div><span>Unit</span><strong>${enc(report.unit)}</strong></div></div>`
+    : '';
+  const current = report.current_scale;
+  const currentNote = current.unit !== 'px'
+    ? `<p class="modal-body-copy">Existing scale kept for now: ${pitchText(current.pitch_x)} × ${pitchText(current.pitch_y)} ${enc(current.unit || '')}/px.</p>`
+    : '<p class="modal-body-copy">No physical scale is set yet; pixel units stay in use until a scale is applied.</p>';
+  const warnings = report.warnings.map(text => `<p class="calibration-warning">${enc(text)}</p>`).join('');
+  const action = proposal
+    ? (report.status === 'review'
+        ? `<p class="modal-body-copy">Review the excluded line, then apply only after you have rechecked it.</p><div class="flex-buttons">${button('Apply reviewed scale','calibration-apply','','primary')}</div>`
+        : `<div class="flex-buttons">${button('Apply scale','calibration-apply','','primary')}</div>`)
+    : `<p class="modal-body-copy">No replacement scale is offered. Recheck the lines and measured lengths, then preview again.</p>`;
+  return `${warnings}${summary}${detailTable(['Reference','Measured','Converted','Difference'],rows)}${currentNote}${action}`;
+}
+async function applyCalibration() {
+  if (!calibrationReport?.proposed_scale) throw new Error('Preview a valid calibration before applying.');
+  const updated = await forCapture('/scale/calibration','POST',calibrationPayload());
+  project = updated;
+  closeModal(); renderPanel();
+  toast(calibrationReport.status === 'review' ? 'Reviewed calibration scale applied.' : 'Calibration scale applied.');
+  calibrationReport = null;
+}
+
 const action = {
   'save-default': async()=>{
     project = await forCapture('/default-view','PUT',{...revision(),state});
@@ -427,6 +517,9 @@ const action = {
   'clear-scale': async()=>{
     project=await forCapture('/scale','DELETE',revision()); renderPanel(); toast('Detector scale cleared.');
   },
+  'line-calibration': async()=>openCalibrationDialog(),
+  'calibration-preview': async()=>runCalibrationPreview(),
+  'calibration-apply': async()=>applyCalibration(),
   'mosaic-review': async()=>{
     const box=activeBox();
     const [r,img]=await Promise.all([processing('/mosaic-review',{box}),processing('/mosaic-review',{box,output:'png'},true)]);

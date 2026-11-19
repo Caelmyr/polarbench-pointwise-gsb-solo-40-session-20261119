@@ -70,7 +70,7 @@ function sourcePanel({project:p, state, config}) {
   const pitch = p.scale ?? {};
   const scale = select('scale-unit','Length unit',[['mm','mm'],['cm','cm'],['um','µm'],['in','in']],pitch.unit || 'mm')
     + row(num('scale-x','Horizontal pitch',pitch.pitch_x ?? 0.1,.0001,0.00000001,1000),num('scale-y','Vertical pitch',pitch.pitch_y ?? 0.1,.0001,0.00000001,1000))
-    + actions(button('Set scale','set-scale'),button('Clear','clear-scale'));
+    + actions(button('Set scale','set-scale'),button('Clear','clear-scale'),button('Calibrate from lines…','line-calibration'));
   return heading('Source preparation') + section('Original images',`<div class="item-list">${sourceLinks}</div>${actions(button('Contact sheet','contact-sheet'),cap.type==='mosaic'?button('Sensor tiles','mosaic-review'):'',download('Source package',`/api/projects/${id}/source-package`))}`)
     + section('Register analyzers', `<p>0° defines detector coordinates. Inspect the overlay before retaining estimated shifts.</p>${offsets}${actions(button('Apply shifts','apply-register'),button('Suggest shifts','suggest-register'),button('Registration overlay','review-register'))}`)
     + section('Intensity correction',`<p>Dark and flat maps are sampled in native detector coordinates before alignment.</p>${refs}${row(check('use-dark','Apply dark',cal.use_dark,!p.references.dark),check('use-flat','Apply flat',cal.use_flat,!p.references.flat))}<details><summary>Per-angle tuning</summary>${tunings}</details>${actions(button('Apply correction','apply-calibration'),button('Neutral balance','neutral-balance'))}`)
