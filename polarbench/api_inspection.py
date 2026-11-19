@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from flask import Blueprint
 
-from . import artifacts, comparison, detector_bands, field_grid, masking, profiles, quality, reference_review, registration_review, statistics, sweep
+from . import artifacts, comparison, detector_bands, field_grid, masking, profiles, quality, reference_review, registration_review, statistics, sweep, trend
 from .domain import Box, InputError, enum_value
 from .http_support import loaded_case, return_project, send_csv, send_download, send_image
 from .render import histogram_chart, legend, profile_chart, raster
@@ -205,6 +205,18 @@ def compare(project_id):
         return send_download(comparison_evidence(result, case.record, reference, processing.processing,
                                                  reference_results.processing, case.options))
     return dict(result.summary(), legend=comparison.compare_legend(result))
+
+
+@api.post('/trend')
+def process_trend(project_id):
+    case = loaded_case(project_id, 'Process trend')
+    report = trend.process_trend(case.bench, case.record, case.options)
+    output = enum_value(case.options.get('output', 'json'), ('json', 'png', 'csv'), 'Trend output')
+    if output == 'png':
+        return send_image(trend.trend_chart(report))
+    if output == 'csv':
+        return send_csv(trend.trend_csv(report), 'polarbench-process-trend.csv')
+    return report
 
 
 @api.post('/download')

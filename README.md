@@ -36,6 +36,7 @@ For Python execution, create a virtual environment using Python 3.11 or 3.12, in
 | Spatial detector summaries | Read orientation by grid cell, row bands or signal extrema. Calibrate detector pitch to report region dimensions or line lengths in physical units. |
 | Raw crop | Preview a box and save it as a new capture with unchanged original sample codes, complete mosaic tiles and contained regions. |
 | Capture comparison | Compare same-size detector captures, review support and signed change and download numerical comparison evidence. |
+| Process trend | Order several same-size captures of one fixture in process order and read one scalar layer inside a box. Each curve segment uses one identical set of detector pixels; segments break when shared measurable support falls below the limit. |
 | Saved inspection | Replay a previous view using the original mask/references or restore its controls while the current source identity matches. |
 | Evidence and portable source packages | Export maps, scalar maps and support together or move original data, current settings and regions into another PolarBench workspace. |
 
@@ -48,6 +49,7 @@ The built-in **Coated panel**, **Shifted laminate** and **Glass mosaic** are det
 - Packed input uses complete sensor cells without interpolating angles between cells. Image size is limited to 5,000,000 pixels and 3200 pixels per side, with 14 MiB per encoded image. An imported source ZIP has a 95 MiB unpacking cap. A capture can hold 24 regions, 16 lines and 24 saved views.
 - `S0` is the mean of the opposing pair sums. `Q=I0−I90`, `U=I45−I135`, and orientation is axial over 180°. Angle and degree use linear polarization only. Physical direction is determined by a known fixture and angle-order metadata. The strongest angle for a virtual analyzer is not the same as the maximum map calculated independently at every pixel.
 - Registration handles bounded integer translations. The texture scorer proposes a candidate; inspector review is appropriate where textures repeat or captures have weak shared detail. Capture comparison assumes the two measurements already refer to the same detector coordinates.
+- A process trend orders two to twelve captures per request. Consecutive steps are chained only while the intersection of their measurable pixels inside the box keeps the configured share of their combined measurable pixels (50% by default). A curve segment reports every capture in its run over that one intersection, so each plotted median covers the same detector positions. A step covered too much to join is omitted and reported instead of being bridged.
 - Rendered PNGs are display images. A linear TIFF preserves numerical values and uses NaN in unsupported positions. It is paired with a support mask in evidence ZIPs. A source package carries input images and current settings but omits saved inspection history.
 
 ## Structure

@@ -140,6 +140,8 @@ label.field { display: grid; gap: 5px; min-width: 0; color: #abb9ca; font-size: 
 .item strong { display: block; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .item small { display: block; font-size: 10px; color: #a6b7c8; margin-top: 4px; }
 .item i { border-radius: 100%; height: 8px; width: 8px; flex: none; }
+.item input[type="checkbox"] { flex: none; margin: 0; }
+.step-badge { flex: none; min-width: 18px; padding: 2px 4px; border-radius: 4px; background: #2c473f; color: var(--primary); font: 10px var(--font-mono); text-align: center; }
 .quiet { background: transparent; border: 0; padding: 3px 6px; border-radius: 4px; color: #c6d1dc; }
 .output-card { padding: 14px 13px; }
 .output-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 7px; margin-bottom: 10px; }

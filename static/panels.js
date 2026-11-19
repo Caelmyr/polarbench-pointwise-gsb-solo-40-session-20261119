@@ -103,15 +103,31 @@ function qualityPanel({config,state,report,project}) {
     + section('Detector mask',activeMask + inputFile('mask-file','Mask PNG or TIFF') + actions(button('Upload mask','upload-mask'),button('Mask evidence','mask-evidence'),button('Clear mask','clear-mask')) + select('mask-mode','Edit from region',[['exclude','Exclude selected pixels'],['keep','Keep selected only'],['restore','Restore selected pixels'],['intersect','Intersect with selection']],'exclude') + select('mask-region','Selection',regionOptions(project,'Current box'),'') + actions(button('Preview edit','mask-preview'),button('Apply edit','mask-apply')));
 }
 
-function comparePanel({project:p, projects, state}) {
+function comparePanel({project:p, projects, state, trend}) {
   const compatible = projects.filter(x => x.id !== p.id && x.width === p.capture.width && x.height === p.capture.height);
-  if (!compatible.length) return heading('Capture comparison') + section('Reference capture','<p>Import or create a second capture with matching detector dimensions to map signed changes and overlapping coverage.</p>');
-  return heading('Capture comparison') + section('Reference capture', select('compare-reference','Compare against',compatible.map(x=>[x.id,x.name]),compatible[0].id)
-    + select('compare-layer','Difference', [['degree','Linear degree'],['direction','Orientation'],['intensity','Total intensity'],['polarized','Polarized intensity'],['pair-error','Pair closure ratio']],state.view.layer)
-    + select('compare-axis','Axis',[['detector','Shared detector directions'],['selected-reference','Use each selected reference axis']],'detector')
-    + select('compare-style','Show',[['difference','Signed difference'],['support','Shared coverage'],['exceeds-threshold','Threshold crossings']],'difference')
-    + row(num('compare-threshold','Change threshold',.10,.01,0,90),num('compare-range','Display range',.35,.01,.0001,90))
-    + actions(button('Compare captures','compare'),button('Export comparison','comparison-export')));
+  const order = trend ?? [];
+  const candidates = [p, ...compatible];
+  const sequence = candidates.map(x => {
+    const step = order.indexOf(x.id);
+    const mark = step < 0 ? '' : `<span class="step-badge">${step + 1}</span>`;
+    return `<div class="item"><input id="trend-${x.id}" type="checkbox" data-id="${x.id}" ${step < 0 ? '' : 'checked'} aria-label="Include ${enc(x.name)}">${mark}<div><strong>${enc(x.name)}</strong><small>${x.id === p.id ? 'This capture · current settings' : 'Saved defaults'} · ${x.width} × ${x.height} px</small></div></div>`;
+  }).join('');
+  const hint = order.length < 2 ? '<p>Check two or more captures in process order. The first check is step 1.</p>' : `<p>Steps ${order.map((id,i)=>`${i+1} = ${enc(candidates.find(x=>x.id===id)?.name ?? id)}`).join(' · ')}</p>`;
+  const trendSection = section('Process trend',
+    '<p>Each segment uses one identical set of detector positions across its captures. When too few measurable pixels are shared the curve breaks, so a changed sampling position is never read as a material change.</p>'
+    + select('trend-layer','Trend signal',[['degree','Linear degree'],['intensity','Total intensity'],['polarized','Polarized intensity'],['q','Stokes Q'],['u','Stokes U'],['pair-error','Pair closure ratio'],['pair-difference','Signed pair disagreement']],'degree')
+    + row(num('trend-shared','Minimum shared fraction',0.5,.05,.05,1))
+    + `<div class="item-list">${sequence}</div>` + hint
+    + actions(button('Plot trend','trend'),button('Trend CSV','trend-csv'),button('Clear order','trend-clear')));
+  const compareSection = compatible.length
+    ? section('Reference capture', select('compare-reference','Compare against',compatible.map(x=>[x.id,x.name]),compatible[0].id)
+      + select('compare-layer','Difference', [['degree','Linear degree'],['direction','Orientation'],['intensity','Total intensity'],['polarized','Polarized intensity'],['pair-error','Pair closure ratio']],state.view.layer)
+      + select('compare-axis','Axis',[['detector','Shared detector directions'],['selected-reference','Use each selected reference axis']],'detector')
+      + select('compare-style','Show',[['difference','Signed difference'],['support','Shared coverage'],['exceeds-threshold','Threshold crossings']],'difference')
+      + row(num('compare-threshold','Change threshold',.10,.01,0,90),num('compare-range','Display range',.35,.01,.0001,90))
+      + actions(button('Compare captures','compare'),button('Export comparison','comparison-export')))
+    : '<p>Import or create a second capture with matching detector dimensions to map signed changes and overlapping coverage.</p>';
+  return heading('Capture comparison') + trendSection + compareSection;
 }
 
 function viewsPanel({project}) {

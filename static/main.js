@@ -8,6 +8,7 @@ const context = OVERLAY.getContext('2d');
 let config, projects = [], project = null, state = null, report = null, tab = 'map', tool = 'probe';
 let target = {}, regionId = '', drag = null, viewport = null, analyzedSequence = 0, captureSequence = 0;
 let viewURL, evidenceURL, toastTimer, previewTimer, mapMode = 'inspection';
+let trendOrder = [];
 
 function toast(text, error=false) {
   el('toast').textContent = text;
@@ -84,7 +85,7 @@ function setTool(next) {
   for (const item of el('select-tools').querySelectorAll('[data-tool]')) item.setAttribute('aria-pressed',String(item.dataset.tool===tool));
 }
 function renderPanel() {
-  if (project) el('inspector-panel').innerHTML = PANEL[tab]({config,state,project,projects,report,selection:target,regionId});
+  if (project) el('inspector-panel').innerHTML = PANEL[tab]({config,state,project,projects,report,selection:target,regionId,trend:tab==='compare'?trendOrder:null});
 }
 function renderRail() {
   el('capture-count').textContent = projects.length;
@@ -118,6 +119,8 @@ async function useCapture(next, readId = null) {
   report = null;
   target = {};
   regionId = '';
+  trendOrder = trendOrder.filter(id=>projects.some(x=>x.id===id));
+  if (project && trendOrder.includes(project.id)) trendOrder = [project.id, ...trendOrder.filter(id=>id!==project.id)];
   mapMode = 'inspection';
   el('view-caption').textContent = 'LIVE INSPECTION';
   el('output-card').hidden = true;
@@ -545,6 +548,9 @@ const action = {
     showEvidence(`${r.current.name} − ${r.reference.name}`,figures+legends(r.legend),img);
   },
   'comparison-export': async()=>downloadBlob(await processing('/compare',{...compareSettings(),output:'evidence'},true),'polarbench-comparison.zip'),
+  'trend': async()=>displayTrend('png'),
+  'trend-csv': async()=>displayTrend('csv'),
+  'trend-clear': async()=>{ trendOrder=[]; renderPanel(); },
   'commit-saved': async()=>{
     await forCapture('/views','POST',{name:value('modal-name'),state,...revision()});
     closeModal(); await reloadRecord(); setTab('views'); toast('Inspection view saved.');
@@ -578,6 +584,26 @@ function uploadFile(id) {
 function reasonName(kind) {return config.quality_legend.find(x=>x.key===kind)?.label || kind;}
 function compareSettings() {
   return {reference_id:value('compare-reference'),layer:value('compare-layer'),axis:value('compare-axis'),map_style:value('compare-style'),threshold:number('compare-threshold'),limit:number('compare-range'),box:activeBox()};
+}
+function trendSettings() {
+  return {capture_ids:trendOrder,layer:value('trend-layer'),minimum_shared:number('trend-shared'),box:activeBox()};
+}
+function trendSummary(report) {
+  if (!report.segments.length) return '<p>No adjacent captures keep enough shared measurable pixels.</p>';
+  const rows = report.segments.map(s => [`${s.steps[0]}${s.steps.length>1?`–${s.steps.at(-1)}`:''}`,
+    s.captures.map(c=>c.name).join(' → '),fmt(s.shared_pixels,0),`${fmt(s.shared_fraction*100,0)}%`,
+    s.points.map(p=>p.median==null?'—':`${fmt(p.median,4)} (${fmt(p.samples,0)})`).join(' → ')]);
+  const skipped = report.unplotted.map(u=>`<p>Step ${u.step} · ${enc(u.name)}: ${enc(u.note)}</p>`).join('');
+  return detailTable(['Steps','Captures','Shared px','Share','Median by step'],rows) + skipped;
+}
+async function displayTrend(output) {
+  if (trendOrder.length < 2) throw new Error('Check at least two captures in process order.');
+  const params=trendSettings();
+  if (output==='csv') return downloadBlob(await processing('/trend',{...params,output:'csv'},true),'polarbench-process-trend.csv');
+  const [r,img]=await Promise.all([processing('/trend',params),processing('/trend',{...params,output:'png'},true)]);
+  const shared=r.segments.map(s=>s.shared_fraction);
+  const figures=metrics([['Steps',fmt(r.captures.length,0)],['Segments',fmt(r.segments.length,0)],['Least shared',shared.length?`${fmt(Math.min(...shared)*100,0)}%`:'—']]);
+  showEvidence(`${r.label} by process step`,figures+trendSummary(r),img);
 }
 async function displaySweep(output) {
   const params={...regionSelection(),start:number('sweep-start'),stop:number('sweep-stop'),count:number('sweep-count'),signal_level:number('sweep-level')};
@@ -663,6 +689,14 @@ function prepareInput() {
     if (id==='compare-layer') {
       el('compare-range').value=event.target.value==='direction'?30:.35;
       el('compare-threshold').value=event.target.value==='direction'?10:.10;
+      return;
+    }
+    const captureId=event.target.dataset?.id;
+    if (captureId && id===`trend-${captureId}`) {
+      const present=trendOrder.includes(captureId);
+      if (event.target.checked && !present) trendOrder.push(captureId);
+      if (!event.target.checked && present) trendOrder=trendOrder.filter(x=>x!==captureId);
+      renderPanel();
       return;
     }
     const before=copy(state);
